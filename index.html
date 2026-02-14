@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Todo App</title>
+  <title>Todo & Pomodoro App</title>
   <style>
     * {
       margin: 0;
@@ -160,11 +160,167 @@
       color: #bbb;
       font-size: 0.95rem;
     }
+
+    /* Pomodoro Timer */
+    .pomodoro {
+      background: #fff;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      text-align: center;
+    }
+
+    .pomodoro h2 {
+      font-size: 1.1rem;
+      color: #222;
+      margin-bottom: 16px;
+    }
+
+    .pomodoro-modes {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 20px;
+      background: #f5f5f5;
+      border-radius: 8px;
+      padding: 4px;
+    }
+
+    .pomodoro-modes button {
+      flex: 1;
+      padding: 8px 4px;
+      font-size: 0.8rem;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #666;
+      transition: all 0.2s;
+      font-weight: 500;
+    }
+
+    .pomodoro-modes button.active {
+      background: #e74c3c;
+      color: #fff;
+    }
+
+    .pomodoro-modes button.active.break {
+      background: #27ae60;
+    }
+
+    .timer-display {
+      font-size: 4rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: #222;
+      margin-bottom: 8px;
+      line-height: 1;
+    }
+
+    .timer-display.running {
+      color: #e74c3c;
+    }
+
+    .timer-display.break-running {
+      color: #27ae60;
+    }
+
+    .pomodoro-session-info {
+      font-size: 0.8rem;
+      color: #999;
+      margin-bottom: 16px;
+    }
+
+    .pomodoro-controls {
+      display: flex;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .pomodoro-controls button {
+      padding: 10px 24px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .pomodoro-controls button:active {
+      transform: scale(0.97);
+    }
+
+    .btn-start {
+      background: #e74c3c;
+      color: #fff;
+    }
+
+    .btn-start:hover {
+      background: #c0392b;
+    }
+
+    .btn-pause {
+      background: #f39c12;
+      color: #fff;
+    }
+
+    .btn-pause:hover {
+      background: #d68910;
+    }
+
+    .btn-reset {
+      background: #eee;
+      color: #666;
+    }
+
+    .btn-reset:hover {
+      background: #ddd;
+    }
+
+    .pomodoro-progress {
+      width: 100%;
+      height: 4px;
+      background: #eee;
+      border-radius: 2px;
+      margin-top: 20px;
+      overflow: hidden;
+    }
+
+    .pomodoro-progress-bar {
+      height: 100%;
+      background: #e74c3c;
+      border-radius: 2px;
+      transition: width 1s linear;
+    }
+
+    .pomodoro-progress-bar.break {
+      background: #27ae60;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>Todo</h1>
+
+    <!-- Pomodoro Timer -->
+    <div class="pomodoro">
+      <h2>Pomodoro Timer</h2>
+      <div class="pomodoro-modes" id="pomodoroModes">
+        <button class="active" onclick="setPomodoroMode('work', this)">作業 (25分)</button>
+        <button onclick="setPomodoroMode('short', this)">短い休憩 (5分)</button>
+        <button onclick="setPomodoroMode('long', this)">長い休憩 (15分)</button>
+      </div>
+      <div class="timer-display" id="timerDisplay">25:00</div>
+      <div class="pomodoro-session-info" id="sessionInfo">セッション: 0 回完了</div>
+      <div class="pomodoro-controls">
+        <button class="btn-start" id="startBtn" onclick="startTimer()">開始</button>
+        <button class="btn-reset" onclick="resetTimer()">リセット</button>
+      </div>
+      <div class="pomodoro-progress">
+        <div class="pomodoro-progress-bar" id="progressBar"></div>
+      </div>
+    </div>
 
     <div class="input-area">
       <input type="text" id="todoInput" placeholder="新しいタスクを入力...">
@@ -182,6 +338,113 @@
   </div>
 
   <script>
+    // --- Pomodoro Timer ---
+    const POMODORO_DURATIONS = { work: 25 * 60, short: 5 * 60, long: 15 * 60 };
+    let pomodoroMode = 'work';
+    let timeLeft = POMODORO_DURATIONS.work;
+    let totalTime = POMODORO_DURATIONS.work;
+    let timerInterval = null;
+    let isRunning = false;
+    let completedSessions = parseInt(localStorage.getItem('pomodoroSessions') || '0');
+
+    const timerDisplay = document.getElementById('timerDisplay');
+    const startBtn = document.getElementById('startBtn');
+    const progressBar = document.getElementById('progressBar');
+    const sessionInfo = document.getElementById('sessionInfo');
+
+    function updateTimerDisplay() {
+      const min = Math.floor(timeLeft / 60);
+      const sec = timeLeft % 60;
+      timerDisplay.textContent = `${String(min).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+
+      const isBreak = pomodoroMode !== 'work';
+      timerDisplay.className = 'timer-display' + (isRunning ? (isBreak ? ' break-running' : ' running') : '');
+      progressBar.className = 'pomodoro-progress-bar' + (isBreak ? ' break' : '');
+      progressBar.style.width = `${((totalTime - timeLeft) / totalTime) * 100}%`;
+      sessionInfo.textContent = `セッション: ${completedSessions} 回完了`;
+    }
+
+    function startTimer() {
+      if (isRunning) {
+        clearInterval(timerInterval);
+        isRunning = false;
+        startBtn.textContent = '再開';
+        startBtn.className = 'btn-start';
+        updateTimerDisplay();
+        return;
+      }
+      isRunning = true;
+      startBtn.textContent = '一時停止';
+      startBtn.className = 'btn-pause';
+      updateTimerDisplay();
+      timerInterval = setInterval(() => {
+        timeLeft--;
+        if (timeLeft <= 0) {
+          clearInterval(timerInterval);
+          isRunning = false;
+          timeLeft = 0;
+          updateTimerDisplay();
+          startBtn.textContent = '開始';
+          startBtn.className = 'btn-start';
+          if (pomodoroMode === 'work') {
+            completedSessions++;
+            localStorage.setItem('pomodoroSessions', completedSessions);
+            updateTimerDisplay();
+          }
+          playAlarm();
+        } else {
+          updateTimerDisplay();
+        }
+      }, 1000);
+    }
+
+    function resetTimer() {
+      clearInterval(timerInterval);
+      isRunning = false;
+      timeLeft = POMODORO_DURATIONS[pomodoroMode];
+      totalTime = timeLeft;
+      startBtn.textContent = '開始';
+      startBtn.className = 'btn-start';
+      updateTimerDisplay();
+    }
+
+    function setPomodoroMode(mode, btn) {
+      clearInterval(timerInterval);
+      isRunning = false;
+      pomodoroMode = mode;
+      timeLeft = POMODORO_DURATIONS[mode];
+      totalTime = timeLeft;
+      startBtn.textContent = '開始';
+      startBtn.className = 'btn-start';
+      document.querySelectorAll('#pomodoroModes button').forEach(b => {
+        b.classList.remove('active', 'break');
+      });
+      btn.classList.add('active');
+      if (mode !== 'work') btn.classList.add('break');
+      updateTimerDisplay();
+    }
+
+    function playAlarm() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const notes = [800, 1000, 800, 1000];
+        notes.forEach((freq, i) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.frequency.value = freq;
+          osc.type = 'sine';
+          gain.gain.value = 0.3;
+          osc.start(ctx.currentTime + i * 0.3);
+          osc.stop(ctx.currentTime + i * 0.3 + 0.2);
+        });
+      } catch (e) {}
+    }
+
+    updateTimerDisplay();
+
+    // --- Todo App ---
     let todos = JSON.parse(localStorage.getItem('todos') || '[]');
     let currentFilter = 'all';
 
